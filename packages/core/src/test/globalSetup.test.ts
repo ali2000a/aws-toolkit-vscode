@@ -57,10 +57,10 @@ export async function mochaGlobalSetup(this: Mocha.Runner) {
         codeScanLogsOutputChannelId.replace(VSCODE_EXTENSION_ID.awstoolkit, VSCODE_EXTENSION_ID.awstoolkitcore)
     )
     await activateExtension(VSCODE_EXTENSION_ID.awstoolkitcore, false, activationLogger)
-    const fakeContext = await FakeExtensionContext.create()
-    fakeContext.globalStorageUri = (await testUtil.createTestWorkspaceFolder('globalStoragePath')).uri
-    fakeContext.extensionPath = globals.context.extensionPath
-    Object.assign(globals, { context: fakeContext })
+    // const fakeContext = await FakeExtensionContext.create()
+    // fakeContext.globalStorageUri = (await testUtil.createTestWorkspaceFolder('globalStoragePath')).uri
+    // fakeContext.extensionPath = globals.context.extensionPath
+    // Object.assign(globals, { context: fakeContext })
 }
 
 export async function mochaGlobalTeardown(this: Mocha.Context) {
