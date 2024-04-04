@@ -54,6 +54,7 @@ describe('SsoAccessTokenProvider', function () {
             clientId: 'dummyClientId',
             clientSecret: 'dummyClientSecret',
             expiresAt: new clock.Date(clock.Date.now() + timeDelta),
+            issuerUrl: 'foo',
             ...extras,
         }
     }

@@ -17,8 +17,6 @@ import {
 } from '@aws-sdk/client-sso'
 import {
     AuthorizationPendingException,
-    CreateTokenRequest,
-    RegisterClientRequest,
     SSOOIDC,
     SSOOIDCClient,
     StartDeviceAuthorizationRequest,
@@ -33,12 +31,37 @@ import { DevSettings } from '../../shared/settings'
 import { SdkError } from '@aws-sdk/types'
 import { HttpRequest, HttpResponse } from '@aws-sdk/protocol-http'
 import { StandardRetryStrategy, defaultRetryDecider } from '@aws-sdk/middleware-retry'
+import OidcClientPKCE from './oidcclientpkce'
+import { toSnakeCase } from '../../shared/utilities/textUtilities'
+import { Credentials, Service } from 'aws-sdk'
+import apiConfig = require('./service-2.json')
+import { ServiceOptions } from '../../shared/awsClientBuilder'
 
 export class OidcClient {
     public constructor(private readonly client: SSOOIDC, private readonly clock: { Date: typeof Date }) {}
 
-    public async registerClient(request: RegisterClientRequest) {
-        const response = await this.client.registerClient(request)
+    /**
+     * TODO remove this when the real client gets created.
+     *
+     * We create this client seperately from the create method because client generation is async.
+     * Modifying {@link OidcClient.create} to be async has
+     * @returns
+     */
+    private async createNewClient(region: string) {
+        return (await globals.sdkClientBuilder.createAwsService(
+            Service,
+            {
+                apiConfig,
+                region,
+                credentials: new Credentials({ accessKeyId: 'xxx', secretAccessKey: 'xxx' }),
+            } as ServiceOptions,
+            undefined
+        )) as OidcClientPKCE
+    }
+
+    public async registerClient(request: OidcClientPKCE.RegisterClientRequest) {
+        const client = await this.createNewClient('us-east-1')
+        const response = await client.makeUnauthenticatedRequest('registerClient', request as unknown as any).promise()
         assertHasProps(response, 'clientId', 'clientSecret', 'clientSecretExpiresAt')
 
         return {
@@ -46,7 +69,20 @@ export class OidcClient {
             clientId: response.clientId,
             clientSecret: response.clientSecret,
             expiresAt: new this.clock.Date(response.clientSecretExpiresAt * 1000),
+            issuerUrl: request.issuerUrl,
         }
+    }
+
+    public async authorize(request: OidcClientPKCE.AuthorizeRequest) {
+        // aws sdk doesn't convert to url params until right before you make the request, so we have to do
+        // it manually ahead of time
+        const params = toSnakeCase(request)
+
+        const paramsModified = Object.entries(params)
+            .map(x => `${x[0]}=${x[1]}`)
+            .join('&')
+        const region = await this.client.config.region()
+        return `https://oidc.${region}.amazonaws.com/authorize?${paramsModified}`
     }
 
     public async startDeviceAuthorization(request: StartDeviceAuthorizationRequest) {
@@ -60,8 +96,14 @@ export class OidcClient {
         }
     }
 
-    public async createToken(request: CreateTokenRequest) {
-        const response = await this.client.createToken(request as CreateTokenRequest)
+    public async createToken(request: OidcClientPKCE.CreateTokenRequest): Promise<{
+        accessToken: string
+        expiresAt: Date
+        tokenType?: string | undefined
+        refreshToken?: string | undefined
+    }> {
+        const client = await this.createNewClient('us-east-1')
+        const response = await client.makeUnauthenticatedRequest('createToken', request as unknown as any).promise()
         assertHasProps(response, 'accessToken', 'expiresIn')
 
         return {
