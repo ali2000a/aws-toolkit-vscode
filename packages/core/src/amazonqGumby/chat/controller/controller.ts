@@ -184,8 +184,7 @@ export class GumbyController {
                 await this.messenger.sendProjectPrompt(validProjects, message.tabID)
             }
         } catch (err: any) {
-            // if there was an issue getting the list of valid projects, the error message
-            // will be shown here
+            // if there was an issue getting the list of valid projects, the error message will be shown here
             this.messenger.sendErrorMessage(err.message, message.tabID)
         }
     }
@@ -212,7 +211,7 @@ export class GumbyController {
                 await this.initiateTransformationOnProject(message)
                 break
             case ButtonActions.CANCEL_TRANSFORMATION_FORM:
-                this.messenger.sendJobFinishedMessage(message.tabId, true, undefined)
+                this.messenger.sendJobFinishedMessage(message.tabId, true)
                 break
             case ButtonActions.VIEW_TRANSFORMATION_HUB:
                 await vscode.commands.executeCommand(GumbyCommands.FOCUS_TRANSFORMATION_HUB)
@@ -220,7 +219,6 @@ export class GumbyController {
                 break
             case ButtonActions.STOP_TRANSFORMATION_JOB:
                 await stopTransformByQ(transformByQState.getJobId(), CancelActionPositions.Chat)
-                this.messenger.sendJobFinishedMessage(message.tabId, true)
                 break
             case ButtonActions.CONFIRM_START_TRANSFORMATION_FLOW:
                 this.messenger.sendCommandMessage({ ...message, command: GumbyCommands.CLEAR_CHAT })
@@ -262,6 +260,8 @@ export class GumbyController {
             await compileProject()
         } catch (err: any) {
             this.messenger.sendRetryableErrorResponse('could-not-compile-project', message.tabID)
+            // reset state to allow "Start a new transformation" button to work
+            this.sessionStorage.getSession().conversationState = ConversationState.IDLE
             throw err
         }
 
@@ -302,10 +302,10 @@ export class GumbyController {
         await this.prepareProjectForSubmission(message)
     }
 
-    private async transformationFinished(message: { tabID: string; jobStatus: string }) {
+    private async transformationFinished(tabID: string, jobStatus: string = '') {
         this.sessionStorage.getSession().conversationState = ConversationState.IDLE
-        this.messenger.sendJobSubmittedMessage(message.tabID, true)
-        this.messenger.sendJobFinishedMessage(message.tabID, false, message.jobStatus)
+        // at this point job is either completed, partially_completed, cancelled, or failed
+        this.messenger.sendJobFinishedMessage(tabID, false)
     }
 
     private async processHumanChatMessage(data: { message: string; tabID: string }) {
@@ -325,7 +325,6 @@ export class GumbyController {
                     })
                 } else {
                     this.messenger.sendRetryableErrorResponse('invalid-java-home', data.tabID)
-                    this.messenger.sendJobFinishedMessage(data.tabID, true, undefined)
                 }
             }
         }

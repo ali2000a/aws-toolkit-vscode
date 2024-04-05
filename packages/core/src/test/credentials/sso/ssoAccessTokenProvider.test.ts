@@ -7,7 +7,7 @@ import assert from 'assert'
 import * as FakeTimers from '@sinonjs/fake-timers'
 import * as sinon from 'sinon'
 import { SsoAccessTokenProvider } from '../../../auth/sso/ssoAccessTokenProvider'
-import { installFakeClock } from '../../testUtil'
+import { assertTelemetry, installFakeClock } from '../../testUtil'
 import { getCache } from '../../../auth/sso/cache'
 
 import { makeTemporaryToolkitFolder, tryRemoveFolder } from '../../../shared/filesystemUtilities'
@@ -221,6 +221,11 @@ describe('SsoAccessTokenProvider', function () {
             const cachedToken = await cache.token.load(startUrl).then(a => a?.token)
             assert.deepStrictEqual(cachedToken, token)
             assert.deepStrictEqual(await cache.registration.load({ region }), registration)
+            assertTelemetry('aws_loginWithBrowser', {
+                result: 'Succeeded',
+                isReAuth: undefined,
+                credentialStartUrl: startUrl,
+            })
         })
 
         it('always creates a new token, even if already cached', async function () {
@@ -258,6 +263,11 @@ describe('SsoAccessTokenProvider', function () {
             await clock.tickAsync(750)
             assert.ok(!progress.visible)
             await assert.rejects(resp, ToolkitError)
+            assertTelemetry('aws_loginWithBrowser', {
+                result: 'Failed',
+                isReAuth: undefined,
+                credentialStartUrl: startUrl,
+            })
         })
 
         /**
@@ -326,6 +336,11 @@ describe('SsoAccessTokenProvider', function () {
 
                 await assert.rejects(sut.createToken(), exception)
                 assert.strictEqual(await cache.registration.load({ region }), undefined)
+                assertTelemetry('aws_loginWithBrowser', {
+                    result: 'Failed',
+                    isReAuth: undefined,
+                    credentialStartUrl: startUrl,
+                })
             })
 
             it('preserves the client registration cache on server faults', async function () {
@@ -350,6 +365,11 @@ describe('SsoAccessTokenProvider', function () {
             it('stops the flow if user does not click the link', async function () {
                 stubOpen(false)
                 await assert.rejects(sut.createToken(), ToolkitError)
+                assertTelemetry('aws_loginWithBrowser', {
+                    result: 'Cancelled',
+                    isReAuth: undefined,
+                    credentialStartUrl: startUrl,
+                })
             })
 
             it('saves the client registration even when cancelled', async function () {

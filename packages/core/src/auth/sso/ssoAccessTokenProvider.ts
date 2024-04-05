@@ -184,19 +184,40 @@ export class SsoAccessTokenProvider {
             clientSecret: registration.clientSecret,
         })
 
-        if (!(await openSsoPortalLink(this.profile.startUrl, authorization))) {
-            throw new CancellationError('user')
+        const openBrowserAndWaitUntilComplete = async () => {
+            if (!(await openSsoPortalLink(this.profile.startUrl, authorization))) {
+                throw new CancellationError('user')
+            }
+
+            const tokenRequest = {
+                clientId: registration.clientId,
+                clientSecret: registration.clientSecret,
+                deviceCode: authorization.deviceCode,
+                grantType: deviceGrantType,
+            }
+
+            return await pollForTokenWithProgress(() => this.oidc.createToken(tokenRequest), authorization)
         }
 
-        const tokenRequest = {
-            clientId: registration.clientId,
-            clientSecret: registration.clientSecret,
-            deviceCode: authorization.deviceCode,
-            grantType: deviceGrantType,
+        const token = this.withBrowserLoginTelemetry(() => openBrowserAndWaitUntilComplete())
+
+        return this.formatToken(await token, registration)
+    }
+
+    /**
+     * Wraps the given function with telemetry related to the browser login.
+     */
+    private withBrowserLoginTelemetry<T extends (...args: any[]) => any>(func: T): ReturnType<T> {
+        if (telemetry.spans.some(s => s.name === 'aws_loginWithBrowser')) {
+            // During certain flows, eg reauthentication, we are already running within a span (run())
+            // so we don't need to create a new one.
+            return func()
         }
 
-        const token = await pollForTokenWithProgress(() => this.oidc.createToken(tokenRequest), authorization)
-        return this.formatToken(token, registration)
+        return telemetry.aws_loginWithBrowser.run(span => {
+            span.record({ credentialStartUrl: this.profile.startUrl })
+            return func()
+        })
     }
 
     /**
